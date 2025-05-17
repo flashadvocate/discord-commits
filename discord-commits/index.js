@@ -11,48 +11,46 @@ import {
 
 const templateName = core.getInput("template") || "plain";
 const template = await loadTemplate(templateName);
+
 const message = core.getInput("message") || template.message;
 const webhook = core.getInput("webhook");
 const lastCommitOnly = stringToBoolean(core.getInput("last-commit-only"));
-const includeExtras = stringToBoolean(core.getInput("include-extras"));
-const extraEmbeds = includeExtras ? template.extras || [] : [];
-const embedStr = stringOrFalse(core.getInput("embed")) || JSON.stringify(template.embed);
+const extraEmbeds = stringToBoolean(core.getInput("include-extras"))
+  ? template.extras || []
+  : [];
+
+const embed =
+  stringOrFalse(core.getInput("embed")) || JSON.stringify(template.embed);
 
 const DATA = {
   env: { ...process.env },
   github: { ...github },
 };
-
-let commits = github.context.payload.commits || [];
-
+// console.log(github.context.payload.commits);
 if (lastCommitOnly) {
-  commits = commits.slice(-1);
+  github.context.payload.commits = github.context.payload.commits.slice(-1);
 }
 
-const commitObjs = commits.map(createCommit);
-
-const descriptionText = commitObjs
-  .map(c => `- \`${c.id.substring(0,7)}\` ${c.title.split("\n")[0]}`)
-  .join("\n");
-
-const baseEmbed = JSON.parse(embedStr);
-baseEmbed.description = descriptionText;
-
-
-let embeds = [parseTemplate(DATA, baseEmbed)];
-
-if (includeExtras) {
-  embeds = embeds.concat(extraEmbeds.map(e => parseTemplate(DATA, e)));
-}
-
+let embeds = github.context.payload.commits.map((commit) => {
+  const titledCommmit = createCommit(commit);
+  return parseTemplate(
+    {
+      ...DATA,
+      commit: titledCommmit,
+    },
+    JSON.parse(embed)
+  );
+});
+embeds = embeds.concat(extraEmbeds.map((embed) => parseTemplate(DATA, embed)));
+console.log(embeds);
 const payload = {
   content: parseTemplate(DATA, message),
-  embeds: embeds.filter(x => x),
+  embeds: embeds.filter((x) => x),
 };
 
 try {
   const webhookURL = new URL(webhook);
-  webhookURL.searchParams.set("wait", "true");
+  webhookURL.searchParams.set('wait','true');
   await fetch(webhookURL.toString(), {
     method: "POST",
     headers: {
